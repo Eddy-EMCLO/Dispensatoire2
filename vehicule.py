@@ -21,15 +21,19 @@ class Vehicule:
         # Distinguer TypeError (mauvais type) et ValueError (mauvaise valeur).
         # À la création, le véhicule est disponible.
         if not isinstance(marque, str) or not marque.strip():
-            raise TypeError("c'est une chaîne non vide")
+            raise ValueError("c'est une chaîne non vide")
         if not isinstance(modele, str) or not modele.strip():
-            raise TypeError("c'est une chaîne non vide")
+            raise ValueError("c'est une chaîne non vide")
         if not self.chassis_valide(numero_chassis):
             raise ValueError("Le numéro de châssis n'est pas valide")
-        if not isinstance(nb_places, int):
+        if not isinstance(nb_places, int) or isinstance(nb_places, bool):
             raise TypeError("ca doit être un entier")
-        if not isinstance(annee, int):
+        if nb_places < 1  or nb_places > 10:
+            raise ValueError("strictement positif")
+        if not isinstance(annee, int) or isinstance(annee, bool):   
             raise TypeError("L'année doit être un entier")
+        if annee < 1880 or annee > 2026:
+            raise ValueError("strictement positif")
 
         self._marque = marque
         self._modele = modele
@@ -81,7 +85,7 @@ class Vehicule:
         # cls(...). Même rôle que Livre.depuis_chaine_csv : utiliser cls
         # (et non Vehicule) est ce qui donnera le TYPE EXACT dans les
         # sous-classes.
-        champs = ligne.split(",")
+        champs = ligne.split(";")
         if len(champs) != 5:
             raise ValueError("Le nombre de champs different de 5")
         marque, modele, numero_chassis, nb_places_str, annee_str = champs
@@ -93,7 +97,7 @@ class Vehicule:
         # Produire un dict marqué d'un champ « type » (le discriminateur
         # qui guidera la reconstruction). Clés attendues : voir les tests.
         return {
-            "type": "vehicule", 
+            "type": self.__class__.__name__,
             "marque" : self.marque,
             "modele": self.modele,
             "numero_chassis": self.numero_chassis,
@@ -184,7 +188,7 @@ class VoitureElectrique(Vehicule):
     @classmethod
     def depuis_csv(cls, ligne):
         # Comme Vehicule.depuis_csv, mais un champ de plus (l'autonomie).
-        champs = ligne.split(",")
+        champs = ligne.split(";")
         if len(champs) != 6:    
             raise ValueError("le nombre de champs different de 6")
         marque, modele, numero_chassis, nb_places_str, annee_str, autonomie_str = champs
@@ -195,24 +199,33 @@ class VoitureElectrique(Vehicule):
         # corriger « type » et ajouter l'attribut propre. (Geste de
         # LivreNumerique.to_dict.)
         donnees = super().to_dict()
-        donnees["type"] = "voiture_electrique"
+        donnees["type"] = self.__class__.__name__
         donnees["autonomie_km"] = self.autonomie_km
         return donnees
-        
+
     @classmethod
     def from_dict(cls, donnees):
-        ...
+        elec = cls(
+            donnees["marque"],
+            donnees["modele"],
+            donnees["numero_chassis"],  
+            donnees["nb_places"],
+            donnees["annee"],
+            donnees["autonomie_km"],
+        )
+        Vehicule._restaurer_disponibilite(elec, donnees)
+        return elec
 
     def fiche_resume(self):
         # On REPREND la fiche de base et on la complète : la capacité reste
         # un préfixe (ENRICHISSEMENT). Format exact : voir les tests.
-        ...
+        return f"{self.nb_places} places [électrique, {self.autonomie_km} km]"
 
     def __str__(self):
-        ...
+        return f"super {super().__str__()}, {self.autonomie_km} km"
 
     def __repr__(self):
-        ...
+        return f"VoitureElectrique(marque='{self.marque}', modele='{self.modele}', numero_chassis='{self.numero_chassis}', nb_places={self.nb_places}, annee={self.annee}, autonomie_km={self.autonomie_km})"
 
 
 class Camion(Vehicule):
@@ -223,31 +236,50 @@ class Camion(Vehicule):
                  charge_utile_t):
         # Déléguer au parent, puis valider l'attribut propre (charge :
         # nombre strictement positif, stocké en float).
-        ...
+        super().__init__(marque, modele, numero_chassis, nb_places, annee)
+        if not isinstance(charge_utile_t, (float, int)) or charge_utile_t <= 0:
+            raise ValueError("strictement positif")
+        self._charge_utile_t = float(charge_utile_t)
 
     @property
     def charge_utile_t(self):
-        ...
+        return self._charge_utile_t
 
     @classmethod
     def depuis_csv(cls, ligne):
-        ...
+        champs = ligne.split(";")
+        if len(champs) != 6:
+            raise ValueError("le nombre de champs different de 6")
+        marque, modele, numero_chassis, nb_places_str, annee_str, charge_str = champs
+        return cls(marque, modele, numero_chassis, int(nb_places_str), int(annee_str), float(charge_str))
 
     def to_dict(self):
-        ...
+        donnees = super().to_dict()
+        donnees["type"] = self.__class__.__name__
+        donnees["charge_utile_t"] = self.charge_utile_t
+        return donnees
 
     @classmethod
     def from_dict(cls, donnees):
-        ...
+        Camion = cls(
+            donnees["marque"],
+            donnees["modele"],
+            donnees["numero_chassis"],  
+            donnees["nb_places"],
+            donnees["annee"],
+            donnees["charge_utile_t"],
+        )
+        Vehicule._restaurer_disponibilite(Camion, donnees)
+        return Camion
 
     def fiche_resume(self):
         # Ici la mesure pertinente n'est PAS le nombre de places : on ne
         # réutilise donc PAS la fiche de base (REMPLACEMENT). Format exact :
         # voir les tests.
-        ...
+        return f"{self.charge_utile_t} t de charge"
 
     def __str__(self):
-        ...
+        return f"{super().__str__()},{self.charge_utile_t} t"
 
     def __repr__(self):
-        ...
+        return f"Camion(marque='{self.marque}', modele='{self.modele}', numero_chassis='{self.numero_chassis}', nb_places={self.nb_places}, annee={self.annee}, charge_utile_t={self.charge_utile_t})"
